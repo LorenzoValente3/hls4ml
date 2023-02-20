@@ -38,7 +38,7 @@ struct instancenorm_config
     static const unsigned n_in = 10;
     static const unsigned n_filt = -1;
     static const unsigned n_gamma_beta = 10;
-    static const float eps = 1e-3;
+
 
     
     // Resource reuse info
@@ -76,32 +76,29 @@ void instancenorm(
     // #pragma HLS ARRAY_PARTITION variable=bias complete
 
     // for loop mean & var
-    float var[n_filt];
-    float mean[n_filt];
-    float scale[n_filt];
-    float bias[n_filt];
-
-
-    for (int i = 0; i < CONFIG_T::n_filt, i++){
+    float var[CONFIG_T::n_filt];
+    float mean[CONFIG_T::n_filt];
+    float scale[CONFIG_T::n_filt];
+    float bias[CONFIG_T::n_filt];
+    float sqrsize = CONFIG_T::n_in/CONFIG_T::n_filt;
+    float sizehw = sqrt(sqrsize);
+    for (int i = 0; i < CONFIG_T::n_filt; i++){
         float sum = 0;
 
-        for (int j = 0; j < data.size, j++){
-            for(int k = 0; k < data.size, k++){
-                sum += data[j][k];
-            }
+        for (int j = sqrsize*i; j < sqrsize*(i+1); j++){
+                sum += data[j];
+            
         }
-            mean[i] = sum / data.size**2;
+            mean[i] = sum / sqrsize;
 
-        for (int j = 0; j < data.size, j++){
-            for(int k = 0; k < data.size, k++){
-                var[i] += (data[j][k] - mean)**2;
-            }
+        for (int j = sqrsize*i; j < sqrsize*(i+1); j++){
+                var[i] += pow((data[j] - mean[i]),2);
         }
-           var[i] /= (data.size**2 - 1);
-           var[i] = sqrt(var);
+           var[i] /= (sqrsize - 1);
+           var[i] = sqrt(var[i]);
 
            scale[i] = gamma[i] / sqrt(var[i] + eps);
-           bias[i] = beta[i] - gamma[i] * mean[i] / (var[i] + eps);
+           bias[i] = beta[i] - gamma[i] * mean[i] / sqrt(var[i] + eps);
     }
 
     int multiplier_limit  = ceil(float(CONFIG_T::n_in) / float(CONFIG_T::reuse_factor));

@@ -21,7 +21,7 @@ from tensorflow.python.ops import math_ops
 
 import sys
 
-sys.path.append('c:/Users/loren/Desktop/hls4ml_fork/hls4ml')
+# sys.path.append('c:/Users/loren/Desktop/hls4ml_fork/hls4ml')
 
 import hls4ml 
 from hls4ml.model.attributes import Attribute
@@ -61,14 +61,16 @@ class InstanceNormalization(hls4ml.model.layers.Layer):
 instancenorm_config = """struct config{index} : nnet::instancenorm_config {{
     
     typedef float eps_t;
+    typedef {gamma_t.name} gamma_t;
+    typedef {beta_t.name} beta_t;
     
     static const unsigned n_in = {n_in};
     static const unsigned n_filt = {n_filt};
-    static const float eps = {epsilon};
+    eps_t eps = {epsilon};
 
     static const unsigned io_type = nnet::{iotype};
     static const unsigned reuse_factor = {reuse_factor};
-    static const bool store_weights_in_bram = False;
+    static const bool store_weights_in_bram = false;
     static const unsigned n_zeros = 0;
     
 }};\n"""
@@ -76,9 +78,9 @@ instancenorm_config = """struct config{index} : nnet::instancenorm_config {{
 #     typedef {beta_t.name} beta_t;
 
 instancenorm_function_template  = (
-    'nnet::instancenorm<{data_t}, {res_t}, {CONFIG_T}>({data}, {res}, {gamma}, {beta});'
+    'nnet::instancenorm<{data_t}, {res_t}, {CONFIG_T}>({data}, {res}, {gamma}, {beta},{epsilon});'
 )
-instancenorm_include_list = ['nnet_instancenorm.h']
+instancenorm_include_list = ['nnet_utils/nnet_instancenorm.h']
 
 
 class InstanceNormConfigTemplate(LayerConfigTemplate):
@@ -89,7 +91,7 @@ class InstanceNormConfigTemplate(LayerConfigTemplate):
     def format(self, node):
         params = self._default_config_params(node)
         params['n_in'] = node.get_input_variable().size_cpp()
-
+        # print(params)
         return self.template.format(**params)
 
 
@@ -110,8 +112,9 @@ class InstanceNormFunctionTemplate(FunctionCallTemplate):
         params['res_t'] = node.get_output_variable().type.name
         params['data'] = node.get_input_variable().name
         params['res'] = node.get_output_variable().name
-        # params['gamma'] = node.get_weights('gamma').name
-        # params['beta'] = node.get_weights('beta').name
+        params['gamma'] = node.get_weights('gamma').name
+        params['beta'] = node.get_weights('beta').name
+        params['epsilon'] = node.get_attr('epsilon')
 
         # params = self._default_function_params(node)
         return self.template.format(**params)
@@ -160,7 +163,7 @@ def main():
 
     model = tf.keras.models.Sequential([
         tf.keras.layers.Input(shape=(32, 32, 1)),
-        tf.keras.layers.Conv2D(filters=64, kernel_size=(3,3), padding='same'),
+        tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), padding='same'),
         tfa.layers.InstanceNormalization(),
         tf.keras.layers.Activation('relu'),
         tf.keras.layers.Flatten(),
@@ -184,7 +187,7 @@ def main():
         model,
         output_dir='hls4mlprj_IN',
         backend='Vivado',
-        io_type='io_stream',
+        io_type='io_parallel',
         part='xcvu9p-flga2577-2-e',
         hls_config=config,
     )
