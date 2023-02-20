@@ -30,19 +30,23 @@ namespace nnet {
 struct instancenorm_config
 {
     // Internal data type definitions
-    typedef float bias_t;
-    typedef float scale_t;
+    typedef float gamma_t;
+    typedef float beta_t;
+    typedef float eps_t;
 
     // Layer Sizes
     static const unsigned n_in = 10;
     static const unsigned n_filt = -1;
-    static const unsigned n_scale_bias = 10;
+    static const unsigned n_gamma_beta = 10;
+    static const float eps = 1e-3;
+
     
     // Resource reuse info
     static const unsigned io_type = io_parallel;
     static const unsigned reuse_factor = 1;
     static const bool store_weights_in_bram = false;
     static const unsigned n_zeros = 0;
+
     // partitioning arrays cyclically to go with roll factors?
     template<class x_T, class y_T>
     using product = nnet::product::mult<x_T, y_T>;
@@ -52,14 +56,15 @@ template<class data_T, class res_T, typename CONFIG_T>
 void instancenorm(
     data_T    data[CONFIG_T::n_in],
     res_T     res[CONFIG_T::n_in],
-    typename CONFIG_T::scale_t  scale[CONFIG_T::n_scale_bias],
-    typename CONFIG_T::bias_t   bias[CONFIG_T::n_scale_bias]
+    typename CONFIG_T::gamma_t  gamma[CONFIG_T::n_gamma_beta],
+    typename CONFIG_T::beta_t   beta[CONFIG_T::n_gamma_beta],
+    typename CONFIG_T::eps_t  eps
 )
 {
     data_T cache;
    
     // Use a function_instantiate in case it helps to explicitly optimize unchanging weights/biases
-    #pragma HLS function_instantiate variable=scale,bias
+    #pragma HLS function_instantiate variable=eps
 
     // For parallel inputs:
     //   - completely partition arrays -- target fabric
@@ -67,14 +72,41 @@ void instancenorm(
     #pragma HLS PIPELINE II=CONFIG_T::reuse_factor
 
     // #pragma HLS ARRAY_PARTITION variable=weights complete // remove this line for now, it breaks compression sometimes
-    #pragma HLS ARRAY_PARTITION variable=scale complete
-    #pragma HLS ARRAY_PARTITION variable=bias complete
+    // #pragma HLS ARRAY_PARTITION variable=scale complete
+    // #pragma HLS ARRAY_PARTITION variable=bias complete
+
+    // for loop mean & var
+    float var[n_filt];
+    float mean[n_filt];
+    float scale[n_filt];
+    float bias[n_filt];
+
+
+    for (int i = 0; i < CONFIG_T::n_filt, i++){
+        float sum = 0;
+
+        for (int j = 0; j < data.size, j++){
+            for(int k = 0; k < data.size, k++){
+                sum += data[j][k];
+            }
+        }
+            mean[i] = sum / data.size**2;
+
+        for (int j = 0; j < data.size, j++){
+            for(int k = 0; k < data.size, k++){
+                var[i] += (data[j][k] - mean)**2;
+            }
+        }
+           var[i] /= (data.size**2 - 1);
+           var[i] = sqrt(var);
+
+           scale[i] = gamma[i] / sqrt(var[i] + eps);
+           bias[i] = beta[i] - gamma[i] * mean[i] / (var[i] + eps);
+    }
 
     int multiplier_limit  = ceil(float(CONFIG_T::n_in) / float(CONFIG_T::reuse_factor));
     CONFIG_T::template product<data_T, typename CONFIG_T::scale_t>::limit(multiplier_limit);
 
-    // mean = np.mean(inp_, axis=(1,2), keepdims=True)
-    // var = np.var(inp_, axis=(1,2), keepdims=True)
     // Calcuate result
     Result: for (int ires = 0; ires < CONFIG_T::n_in; ires++) {
         if (CONFIG_T::n_filt==-1) {
@@ -85,13 +117,7 @@ void instancenorm(
         }
 	}
 }
-// var = 0;
-// for( n = 0; n < numPoints; n++ )
-// {
-//   var += (Array[n] - mean) * (Array[n] - mean);
-// }
-// var /= numPoints;
-// sd = sqrt(var);
+
 
 }
 

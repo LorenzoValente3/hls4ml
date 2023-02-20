@@ -811,7 +811,6 @@ class BatchNormalization(Layer):
         self.add_weights_variable(name='scale', var_name='s{index}', data=scale)
         self.add_weights_variable(name='bias', var_name='b{index}', data=bias)
 
-
 class Merge(Layer):
     def initialize(self):
         assert len(self.inputs) == 2
