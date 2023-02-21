@@ -27,6 +27,38 @@
 
 namespace nnet {
 
+template<class data_T, class res_T>
+void fixedsqrt(
+    data_T    data,
+    res_T&     res
+)
+{
+    if (data == 0)
+        res = 0;
+ 
+    int msb = 0;
+    int n = data / 2;
+    while (n != 0) {
+        n = n / 2;
+        msb++;
+    }
+    res = 1 << msb;
+ 
+    data_T result = 0;
+    while (res != 0) {
+        // Check whether the current value
+        // of 'res' can be added or not
+        if ((result + res) * (result + res) <= data) {
+            result += res;
+        }
+ 
+        // (a = a/2)
+        res >>= 1;
+    }
+}
+
+
+
 struct instancenorm_config
 {
     // Internal data type definitions
@@ -61,7 +93,7 @@ void instancenorm(
     typename CONFIG_T::eps_t  eps
 )
 {
-    data_T cache;
+    // data_T cache;
    
     // Use a function_instantiate in case it helps to explicitly optimize unchanging weights/biases
     #pragma HLS function_instantiate variable=eps
@@ -76,14 +108,17 @@ void instancenorm(
     // #pragma HLS ARRAY_PARTITION variable=bias complete
 
     // for loop mean & var
-    float var[CONFIG_T::n_filt];
-    float mean[CONFIG_T::n_filt];
-    float scale[CONFIG_T::n_filt];
-    float bias[CONFIG_T::n_filt];
-    float sqrsize = CONFIG_T::n_in/CONFIG_T::n_filt;
-    float sizehw = sqrt(sqrsize);
+    typename CONFIG_T::gamma_t var[CONFIG_T::n_filt];
+    typename CONFIG_T::gamma_t mean[CONFIG_T::n_filt];
+    typename CONFIG_T::gamma_t scale[CONFIG_T::n_filt];
+    typename CONFIG_T::gamma_t bias[CONFIG_T::n_filt];
+    typename CONFIG_T::gamma_t sqrsize = CONFIG_T::n_in/CONFIG_T::n_filt;
+    typename CONFIG_T::gamma_t sizehw;
+    typename CONFIG_T::gamma_t fixedeps = eps;
+    fixedsqrt(sqrsize,sizehw);
+
     for (int i = 0; i < CONFIG_T::n_filt; i++){
-        float sum = 0;
+        typename CONFIG_T::gamma_t sum = 0;
 
         for (int j = sqrsize*i; j < sqrsize*(i+1); j++){
                 sum += data[j];
@@ -92,31 +127,38 @@ void instancenorm(
             mean[i] = sum / sqrsize;
 
         for (int j = sqrsize*i; j < sqrsize*(i+1); j++){
-                var[i] += pow((data[j] - mean[i]),2);
+                typename CONFIG_T::gamma_t tmp = (data[j] - mean[i]);
+                var[i] += tmp*tmp;
         }
            var[i] /= (sqrsize - 1);
-           var[i] = sqrt(var[i]);
-
-           scale[i] = gamma[i] / sqrt(var[i] + eps);
-           bias[i] = beta[i] - gamma[i] * mean[i] / sqrt(var[i] + eps);
+           fixedsqrt(var[i], var[i]);
+           //var[i] = sqrt(var[i]);
+           typename CONFIG_T::gamma_t denominator;
+           fixedsqrt(var[i] + fixedeps,denominator);
+           scale[i] = gamma[i] / denominator;
+           bias[i] = beta[i] - gamma[i] * mean[i] / denominator;
     }
 
     int multiplier_limit  = ceil(float(CONFIG_T::n_in) / float(CONFIG_T::reuse_factor));
-    CONFIG_T::template product<data_T, typename CONFIG_T::scale_t>::limit(multiplier_limit);
+    CONFIG_T::template product<data_T, typename CONFIG_T::gamma_t>::limit(multiplier_limit);
 
     // Calcuate result
     Result: for (int ires = 0; ires < CONFIG_T::n_in; ires++) {
         if (CONFIG_T::n_filt==-1) {
-            res[ires] = CONFIG_T::template product<data_T, typename CONFIG_T::scale_t>::product(data[ires], scale[ires]) + bias[ires];
+            res[ires] = CONFIG_T::template product<data_T, typename CONFIG_T::gamma_t>::product(data[ires], scale[ires]) + bias[ires];
 	    } else {
             int norm_index = ires%CONFIG_T::n_filt;
-            res[ires] = CONFIG_T::template product<data_T, typename CONFIG_T::scale_t>::product(data[ires], scale[norm_index]) + bias[norm_index];
+            res[ires] = CONFIG_T::template product<data_T, typename CONFIG_T::gamma_t>::product(data[ires], scale[norm_index]) + bias[norm_index];
         }
 	}
 }
 
 
 }
+
+
+
+
 
 
 #endif

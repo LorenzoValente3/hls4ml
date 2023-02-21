@@ -162,8 +162,8 @@ def main():
     # # Test if it works
 
     model = tf.keras.models.Sequential([
-        tf.keras.layers.Input(shape=(32, 32, 1)),
-        tf.keras.layers.Conv2D(filters=16, kernel_size=(3,3), padding='same'),
+        tf.keras.layers.Input(shape=(8, 8, 1)),
+        tf.keras.layers.Conv2D(filters=4, kernel_size=(2,2), padding='same'),
         tfa.layers.InstanceNormalization(),
         tf.keras.layers.Activation('relu'),
         tf.keras.layers.Flatten(),
@@ -171,7 +171,7 @@ def main():
     ])
 
     # Test if it works
-    x = tf.random.normal((1, 32, 32, 1))
+    x = tf.random.normal((1, 8, 8, 1)).numpy()
     res = model(x)
 
     # Create dummy config
@@ -188,18 +188,19 @@ def main():
         output_dir='hls4mlprj_IN',
         backend='Vivado',
         io_type='io_parallel',
-        part='xcvu9p-flga2577-2-e',
+        part='xcu50-fsvh2104-2-e',
         hls_config=config,
     )
 
     hmodel.compile()
-    hres = hmodel.predict(x.astype('float32'))
+    print(x)
+    #hres = hmodel.predict(x)
 
     print('Compare prediction by hls4ml model to Keras one')
-    print(res - hres)
+    #print(res - hres)
 
     # print('Building model')
-    # report = hmodel.build(reset=True, csim=False, cosim=True, synth=True, vsynth=True)
+    report = hmodel.build(reset=False, csim=False, cosim=False, synth=False, vsynth=False)
     # print(report)
 
 
