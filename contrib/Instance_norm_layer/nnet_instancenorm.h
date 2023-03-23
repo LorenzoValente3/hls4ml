@@ -23,7 +23,7 @@
 #include "nnet_common.h"
 #include "nnet_dense.h"
 #include "hls_stream.h"
-#include "/home/marco/tools/Vivado/2021.1/include/hls_math.h"
+#include "hls_math.h"
 #include "ap_fixed.h"
 //#include <math.h>
 
